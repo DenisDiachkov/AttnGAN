@@ -20,6 +20,7 @@ import dateutil.tz
 import argparse
 import numpy as np
 from PIL import Image
+import pickle
 
 import torch
 import torch.nn as nn
@@ -27,10 +28,23 @@ import torch.optim as optim
 from torch.autograd import Variable
 import torch.backends.cudnn as cudnn
 import torchvision.transforms as transforms
+import matplotlib.pyplot as plt
 
 
 dir_path = (os.path.abspath(os.path.join(os.path.realpath(__file__), './.')))
 sys.path.append(dir_path)
+
+
+def save_plot(x, y, x_name, y_name, plot_name):
+    plt.plot(x,y, markersize=2, linewidth=1, marker='o')
+    plt.xlabel(x_name)
+    plt.ylabel(y_name)
+    plt.title(plot_name)
+
+    plt.savefig(plot_name + '.png')
+    plt.clf()
+
+    pickle.dump((x, y), open(plot_name + '_DAMSM', 'w'))
 
 
 UPDATE_INTERVAL = 200
@@ -93,18 +107,18 @@ def train(dataloader, cnn_model, rnn_model, batch_size,
         #
         # `clip_grad_norm` helps prevent
         # the exploding gradient problem in RNNs / LSTMs.
-        torch.nn.utils.clip_grad_norm(rnn_model.parameters(),
+        torch.nn.utils.clip_grad_norm_(rnn_model.parameters(),
                                       cfg.TRAIN.RNN_GRAD_CLIP)
         optimizer.step()
 
         if step % UPDATE_INTERVAL == 0:
             count = epoch * len(dataloader) + step
 
-            s_cur_loss0 = s_total_loss0[0] / UPDATE_INTERVAL
-            s_cur_loss1 = s_total_loss1[0] / UPDATE_INTERVAL
+            s_cur_loss0 = s_total_loss0.item() / UPDATE_INTERVAL
+            s_cur_loss1 = s_total_loss1.item() / UPDATE_INTERVAL
 
-            w_cur_loss0 = w_total_loss0[0] / UPDATE_INTERVAL
-            w_cur_loss1 = w_total_loss1[0] / UPDATE_INTERVAL
+            w_cur_loss0 = w_total_loss0.item() / UPDATE_INTERVAL
+            w_cur_loss1 = w_total_loss1.item() / UPDATE_INTERVAL
 
             elapsed = time.time() - start_time
             print('| epoch {:3d} | {:5d}/{:5d} batches | ms/batch {:5.2f} | '
@@ -157,8 +171,8 @@ def evaluate(dataloader, cnn_model, rnn_model, batch_size):
         if step == 50:
             break
 
-    s_cur_loss = s_total_loss[0] / step
-    w_cur_loss = w_total_loss[0] / step
+    s_cur_loss = s_total_loss.item() / step
+    w_cur_loss = w_total_loss.item() / step
 
     return s_cur_loss, w_cur_loss
 
@@ -235,7 +249,8 @@ if __name__ == "__main__":
     imsize = cfg.TREE.BASE_SIZE * (2 ** (cfg.TREE.BRANCH_NUM-1))
     batch_size = cfg.TRAIN.BATCH_SIZE
     image_transform = transforms.Compose([
-        transforms.Scale(int(imsize * 76 / 64)),
+        transforms.Resize(int(imsize * 76 / 64)),
+#        transforms.Scale(int(imsize * 76 / 64)),
         transforms.RandomCrop(imsize),
         transforms.RandomHorizontalFlip()])
     dataset = TextDataset(cfg.DATA_DIR, 'train',
@@ -266,6 +281,9 @@ if __name__ == "__main__":
     # At any point you can hit Ctrl + C to break out of training early.
     try:
         lr = cfg.TRAIN.ENCODER_LR
+        valid_s_losses = []
+        valid_w_losses = []
+        leraning_rates = []
         for epoch in range(start_epoch, cfg.TRAIN.MAX_EPOCH):
             optimizer = optim.Adam(para, lr=lr, betas=(0.5, 0.999))
             epoch_start_time = time.time()
@@ -276,6 +294,12 @@ if __name__ == "__main__":
             if len(dataloader_val) > 0:
                 s_loss, w_loss = evaluate(dataloader_val, image_encoder,
                                           text_encoder, batch_size)
+                valid_s_losses.append(s_loss)
+                valid_w_losses.append(w_loss)
+                leraning_rates.append(lr)
+                save_plot(range(epoch+1), valid_w_losses, 'epochs', 's_loss', 'valid_s_loss')
+                save_plot(range(epoch+1), valid_s_losses, 'epochs', 'w_loss', 'valid_w_loss')
+                save_plot(range(epoch+1), leraning_rates, 'epochs', 'learning_rate', 'learning_rate')
                 print('| end epoch {:3d} | valid loss '
                       '{:5.2f} {:5.2f} | lr {:.5f}|'
                       .format(epoch, s_loss, w_loss, lr))

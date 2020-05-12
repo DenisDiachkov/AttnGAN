@@ -20,7 +20,7 @@ class GLU(nn.Module):
         nc = x.size(1)
         assert nc % 2 == 0, 'channels dont divide 2!'
         nc = int(nc/2)
-        return x[:, :nc] * F.sigmoid(x[:, nc:])
+        return x[:, :nc] *  torch.sigmoid(x[:, nc:]) # F.sigmoid(x[:, nc:])
 
 
 def conv1x1(in_planes, out_planes, bias=False):
@@ -95,16 +95,19 @@ class RNN_ENCODER(nn.Module):
 
     def define_module(self):
         self.encoder = nn.Embedding(self.ntoken, self.ninput)
+        self._out_shape = 150
+        self.FCNoiseSupression = nn.Linear(self.ninput, self._out_shape)
+        self.ninput = self._out_shape
         self.drop = nn.Dropout(self.drop_prob)
         if self.rnn_type == 'LSTM':
             # dropout: If non-zero, introduces a dropout layer on
             # the outputs of each RNN layer except the last layer
-            self.rnn = nn.LSTM(self.ninput, self.nhidden,
+            self.rnn = nn.LSTM(self._out_shape, self.nhidden,
                                self.nlayers, batch_first=True,
-                               dropout=self.drop_prob,
+                               # dropout=self.drop_prob,
                                bidirectional=self.bidirectional)
         elif self.rnn_type == 'GRU':
-            self.rnn = nn.GRU(self.ninput, self.nhidden,
+            self.rnn = nn.GRU(self._out_shape, self.nhidden,
                               self.nlayers, batch_first=True,
                               dropout=self.drop_prob,
                               bidirectional=self.bidirectional)
@@ -133,7 +136,7 @@ class RNN_ENCODER(nn.Module):
     def forward(self, captions, cap_lens, hidden, mask=None):
         # input: torch.LongTensor of size batch x n_steps
         # --> emb: batch x n_steps x ninput
-        emb = self.drop(self.encoder(captions))
+        emb = self.drop(self.FCNoiseSupression(self.encoder(captions)))
         #
         # Returns: a PackedSequence object
         cap_lens = cap_lens.data.tolist()
@@ -207,7 +210,7 @@ class CNN_ENCODER(nn.Module):
     def forward(self, x):
         features = None
         # --> fixed-size input: batch x 3 x 299 x 299
-        x = nn.Upsample(size=(299, 299), mode='bilinear')(x)
+        x = nn.Upsample(size=(299, 299), mode='bilinear', align_corners=True)(x)
         # 299 x 299 x 3
         x = self.Conv2d_1a_3x3(x)
         # 149 x 149 x 32

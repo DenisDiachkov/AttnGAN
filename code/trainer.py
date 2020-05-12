@@ -23,6 +23,22 @@ import os
 import time
 import numpy as np
 import sys
+import pickle
+import matplotlib.pyplot as plt
+
+
+
+def save_plot(x, y, x_name, y_name, plot_name):
+    plt.plot(x,y, markersize=2, linewidth=1, marker='o')
+    plt.xlabel(x_name)
+    plt.ylabel(y_name)
+    plt.title(plot_name)
+
+    plt.savefig(plot_name + '.png')
+    plt.clf()
+
+    pickle.dump((x, y), open(plot_name + '_data.pickle', 'w'))
+
 
 # ################# Text to image task############################ #
 class condGANTrainer(object):
@@ -229,6 +245,10 @@ class condGANTrainer(object):
             noise, fixed_noise = noise.cuda(), fixed_noise.cuda()
 
         gen_iterations = 0
+        losses_G = pickle.load(open('Bird dataset, Loss_G_data.pickle', 'r'))
+        losses_G = [i[1] for i in losses_G]
+        losses_D = pickle.load(open('Bird dataset, Loss_D_data.pickle', 'r'))
+        losses_D = [i[1] for i in losses_D]
         # gen_iterations = start_epoch * self.num_batches
         for epoch in range(start_epoch, self.max_epoch):
             start_t = time.time()
@@ -274,7 +294,7 @@ class condGANTrainer(object):
                     errD.backward()
                     optimizersD[i].step()
                     errD_total += errD
-                    D_logs += 'errD%d: %.2f ' % (i, errD.data[0])
+                    D_logs += 'errD%d: %.2f ' % (i, errD.data.item())
 
                 #######################################################
                 # (4) Update G network: maximize log(D(G(z)))
@@ -291,7 +311,7 @@ class condGANTrainer(object):
                                    words_embs, sent_emb, match_labels, cap_lens, class_ids)
                 kl_loss = KL_loss(mu, logvar)
                 errG_total += kl_loss
-                G_logs += 'kl_loss: %.2f ' % kl_loss.data[0]
+                G_logs += 'kl_loss: %.2f ' % kl_loss.data.item()
                 # backward and update parameters
                 errG_total.backward()
                 optimizerG.step()
@@ -315,10 +335,15 @@ class condGANTrainer(object):
                     #                       epoch, name='current')
             end_t = time.time()
 
+            losses_D.append(errD_total.data.item())
+            losses_G.append(errG_total.data.item())
+            save_plot(range(epoch+1), losses_D, 'epochs', 'Loss_D', 'Bird dataset, Loss_D')
+            save_plot(range(epoch+1), losses_G, 'epochs', 'Loss_G', 'Bird dataset, Loss_G')
+            
             print('''[%d/%d][%d]
                   Loss_D: %.2f Loss_G: %.2f Time: %.2fs'''
                   % (epoch, self.max_epoch, self.num_batches,
-                     errD_total.data[0], errG_total.data[0],
+                     errD_total.data.item(), errG_total.data.item(),
                      end_t - start_t))
 
             if epoch % cfg.TRAIN.SNAPSHOT_INTERVAL == 0:  # and epoch != 0:
