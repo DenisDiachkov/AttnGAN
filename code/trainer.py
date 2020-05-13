@@ -245,10 +245,8 @@ class condGANTrainer(object):
             noise, fixed_noise = noise.cuda(), fixed_noise.cuda()
 
         gen_iterations = 0
-        losses_G = pickle.load(open('Bird dataset, Loss_G_data.pickle', 'r'))
-        losses_G = [i[1] for i in losses_G]
-        losses_D = pickle.load(open('Bird dataset, Loss_D_data.pickle', 'r'))
-        losses_D = [i[1] for i in losses_D]
+        losses_G = []
+        losses_D = []
         # gen_iterations = start_epoch * self.num_batches
         for epoch in range(start_epoch, self.max_epoch):
             start_t = time.time()

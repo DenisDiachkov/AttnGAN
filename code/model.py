@@ -95,24 +95,23 @@ class RNN_ENCODER(nn.Module):
 
     def define_module(self):
         self.encoder = nn.Embedding(self.ntoken, self.ninput)
-        self._out_shape = 150
-        self.FCNoiseSupression = nn.Linear(self.ninput, self._out_shape)
-        self.ninput = self._out_shape
         self.drop = nn.Dropout(self.drop_prob)
         if self.rnn_type == 'LSTM':
             # dropout: If non-zero, introduces a dropout layer on
             # the outputs of each RNN layer except the last layer
-            self.rnn = nn.LSTM(self._out_shape, self.nhidden,
+            self.rnn = nn.LSTM(self.ninput, self.nhidden,
                                self.nlayers, batch_first=True,
-                               # dropout=self.drop_prob,
+                               dropout=self.drop_prob if self.nlayers > 1 else 0.0,
                                bidirectional=self.bidirectional)
         elif self.rnn_type == 'GRU':
-            self.rnn = nn.GRU(self._out_shape, self.nhidden,
+            self.rnn = nn.GRU(self.ninput, self.nhidden,
                               self.nlayers, batch_first=True,
                               dropout=self.drop_prob,
                               bidirectional=self.bidirectional)
         else:
             raise NotImplementedError
+        self._out_shape = 64
+        self.FCNoiseSupression = nn.Linear(self.nhidden * self.num_directions, self._out_shape)
 
     def init_weights(self):
         initrange = 0.1
@@ -136,7 +135,7 @@ class RNN_ENCODER(nn.Module):
     def forward(self, captions, cap_lens, hidden, mask=None):
         # input: torch.LongTensor of size batch x n_steps
         # --> emb: batch x n_steps x ninput
-        emb = self.drop(self.FCNoiseSupression(self.encoder(captions)))
+        emb = self.drop(self.encoder(captions))
         #
         # Returns: a PackedSequence object
         cap_lens = cap_lens.data.tolist()
@@ -150,9 +149,10 @@ class RNN_ENCODER(nn.Module):
         # PackedSequence object
         # --> (batch, seq_len, hidden_size * num_directions)
         output = pad_packed_sequence(output, batch_first=True)[0]
+        output = self.FCNoiseSupression(output)
         # output = self.drop(output)
         # --> batch x hidden_size*num_directions x seq_len
-        words_emb = output.transpose(1, 2)
+        words_emb = output.transpose(1, 2).contiguous()
         # --> batch x num_directions*hidden_size
         if self.rnn_type == 'LSTM':
             sent_emb = hidden[0].transpose(0, 1).contiguous()
@@ -334,7 +334,7 @@ class INIT_STAGE_G(nn.Module):
         out_code = out_code.view(-1, self.gf_dim, 4, 4)
         # state size ngf/3 x 8 x 8
         out_code = self.upsample1(out_code)
-        # state size ngf/4 x 16 x 16
+        # state size ngf/4 x 16 x 16    
         out_code = self.upsample2(out_code)
         # state size ngf/8 x 32 x 32
         out_code32 = self.upsample3(out_code)
